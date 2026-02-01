@@ -68,20 +68,26 @@ const TEST_PAGE_HTML = `<!DOCTYPE html>
     label { display: block; margin-bottom: 8px; font-weight: 600; }
     input, select { width: 100%; padding: 12px; margin-bottom: 16px; border: 1px solid #ddd; border-radius: 8px; font-size: 16px; }
     button { width: 100%; padding: 14px; background: #0070f3; color: white; border: none; border-radius: 8px; font-size: 16px; cursor: pointer; }
-    button:hover { background: #005bb5; }
+    button:disabled { background: #ccc; }
+    button:hover:not(:disabled) { background: #005bb5; }
     .result { margin-top: 16px; padding: 16px; background: #e8f5e9; border-radius: 8px; font-size: 18px; text-align: center; }
     .error { background: #ffebee; color: #c62828; }
     #log { font-family: monospace; font-size: 12px; background: #1a1a1a; color: #0f0; padding: 12px; border-radius: 8px; max-height: 200px; overflow-y: auto; white-space: pre-wrap; }
+    .status { padding: 8px 12px; border-radius: 6px; margin-bottom: 16px; font-weight: 500; }
+    .status.connected { background: #e8f5e9; color: #2e7d32; }
+    .status.disconnected { background: #ffebee; color: #c62828; }
+    .status.connecting { background: #fff3e0; color: #ef6c00; }
   </style>
 </head>
 <body>
   <h1>MCP Calculator Test</h1>
 
   <div class="card">
+    <div id="status" class="status connecting">Connecting...</div>
     <h3>Quick Add</h3>
     <label>A</label><input type="number" id="addA" value="5">
     <label>B</label><input type="number" id="addB" value="3">
-    <button onclick="testAdd()">Add Numbers</button>
+    <button id="addBtn" onclick="testAdd()" disabled>Add Numbers</button>
     <div class="result" id="addResult" style="display:none"></div>
   </div>
 
@@ -91,42 +97,114 @@ const TEST_PAGE_HTML = `<!DOCTYPE html>
     <select id="op">
       <option value="add">Add (+)</option>
       <option value="subtract">Subtract (-)</option>
-      <option value="multiply">Multiply (×)</option>
-      <option value="divide">Divide (÷)</option>
+      <option value="multiply">Multiply (x)</option>
+      <option value="divide">Divide (/)</option>
     </select>
     <label>A</label><input type="number" id="calcA" value="10">
     <label>B</label><input type="number" id="calcB" value="2">
-    <button onclick="testCalc()">Calculate</button>
+    <button id="calcBtn" onclick="testCalc()" disabled>Calculate</button>
     <div class="result" id="calcResult" style="display:none"></div>
   </div>
 
   <div class="card">
     <h3>Connection Log</h3>
-    <div id="log">Connecting...</div>
+    <div id="log"></div>
   </div>
 
-  <script type="module">
-    import { Client } from "https://esm.sh/@modelcontextprotocol/sdk@1.9.0/client/index.js";
-    import { SSEClientTransport } from "https://esm.sh/@modelcontextprotocol/sdk@1.9.0/client/sse.js";
+  <script>
+    const mcpUrl = location.origin + "/mcp";
+    let sessionUrl = null;
+    let msgId = 1;
 
     const log = document.getElementById("log");
-    const mcpUrl = location.origin + "/mcp";
-    let client;
+    const status = document.getElementById("status");
 
-    function addLog(msg) { log.textContent += "\\n" + msg; log.scrollTop = log.scrollHeight; }
+    function addLog(msg) {
+      const time = new Date().toLocaleTimeString();
+      log.textContent += "[" + time + "] " + msg + "\\n";
+      log.scrollTop = log.scrollHeight;
+    }
+
+    function setStatus(state, text) {
+      status.className = "status " + state;
+      status.textContent = text;
+      const connected = state === "connected";
+      document.getElementById("addBtn").disabled = !connected;
+      document.getElementById("calcBtn").disabled = !connected;
+    }
+
+    async function sendMessage(method, params = {}) {
+      const id = msgId++;
+      const body = JSON.stringify({ jsonrpc: "2.0", id, method, params });
+      addLog("-> " + method);
+
+      const res = await fetch(sessionUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body
+      });
+
+      const text = await res.text();
+      const data = JSON.parse(text);
+
+      if (data.error) {
+        addLog("<- Error: " + data.error.message);
+        throw new Error(data.error.message);
+      }
+
+      addLog("<- OK");
+      return data.result;
+    }
 
     async function connect() {
       try {
-        log.textContent = "Connecting to " + mcpUrl + "...";
-        client = new Client({ name: "web-test", version: "1.0.0" });
-        const transport = new SSEClientTransport(new URL(mcpUrl));
-        await client.connect(transport);
-        addLog("Connected!");
-        const { tools } = await client.listTools();
-        addLog("Tools: " + tools.map(t => t.name).join(", "));
-        window.mcpClient = client;
+        addLog("Connecting to " + mcpUrl);
+        setStatus("connecting", "Connecting...");
+
+        // Open SSE connection to get session URL
+        const sse = new EventSource(mcpUrl);
+
+        await new Promise((resolve, reject) => {
+          sse.onopen = () => addLog("SSE connection opened");
+
+          sse.addEventListener("endpoint", (e) => {
+            sessionUrl = new URL(e.data, mcpUrl).href;
+            addLog("Session URL: " + sessionUrl);
+            resolve();
+          });
+
+          sse.onerror = (e) => {
+            addLog("SSE error");
+            reject(new Error("SSE connection failed"));
+          };
+
+          setTimeout(() => reject(new Error("Connection timeout")), 10000);
+        });
+
+        // Initialize MCP session
+        const initResult = await sendMessage("initialize", {
+          protocolVersion: "2024-11-05",
+          capabilities: {},
+          clientInfo: { name: "web-test", version: "1.0.0" }
+        });
+        addLog("Server: " + initResult.serverInfo.name + " v" + initResult.serverInfo.version);
+
+        // Send initialized notification
+        await fetch(sessionUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" })
+        });
+
+        // List tools
+        const toolsResult = await sendMessage("tools/list");
+        addLog("Tools: " + toolsResult.tools.map(t => t.name).join(", "));
+
+        setStatus("connected", "Connected - Ready to test!");
+
       } catch (e) {
         addLog("Error: " + e.message);
+        setStatus("disconnected", "Connection failed: " + e.message);
       }
     }
 
@@ -134,13 +212,16 @@ const TEST_PAGE_HTML = `<!DOCTYPE html>
       const a = parseFloat(document.getElementById("addA").value);
       const b = parseFloat(document.getElementById("addB").value);
       const result = document.getElementById("addResult");
+
       try {
-        addLog("Calling add(" + a + ", " + b + ")");
-        const res = await window.mcpClient.callTool({ name: "add", arguments: { a, b } });
-        result.textContent = a + " + " + b + " = " + res.content[0].text;
+        const res = await sendMessage("tools/call", {
+          name: "add",
+          arguments: { a, b }
+        });
+        const text = res.content[0].text;
+        result.textContent = a + " + " + b + " = " + text;
         result.className = "result";
         result.style.display = "block";
-        addLog("Result: " + res.content[0].text);
       } catch (e) {
         result.textContent = "Error: " + e.message;
         result.className = "result error";
@@ -153,14 +234,17 @@ const TEST_PAGE_HTML = `<!DOCTYPE html>
       const a = parseFloat(document.getElementById("calcA").value);
       const b = parseFloat(document.getElementById("calcB").value);
       const result = document.getElementById("calcResult");
+
       try {
-        addLog("Calling calculate(" + op + ", " + a + ", " + b + ")");
-        const res = await window.mcpClient.callTool({ name: "calculate", arguments: { operation: op, a, b } });
-        const symbols = { add: "+", subtract: "-", multiply: "×", divide: "÷" };
-        result.textContent = a + " " + symbols[op] + " " + b + " = " + res.content[0].text;
+        const res = await sendMessage("tools/call", {
+          name: "calculate",
+          arguments: { operation: op, a, b }
+        });
+        const symbols = { add: "+", subtract: "-", multiply: "x", divide: "/" };
+        const text = res.content[0].text;
+        result.textContent = a + " " + symbols[op] + " " + b + " = " + text;
         result.className = "result";
         result.style.display = "block";
-        addLog("Result: " + res.content[0].text);
       } catch (e) {
         result.textContent = "Error: " + e.message;
         result.className = "result error";
