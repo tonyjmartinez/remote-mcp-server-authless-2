@@ -113,7 +113,7 @@ const TEST_PAGE_HTML = `<!DOCTYPE html>
 
   <script>
     const mcpUrl = location.origin + "/mcp";
-    let sessionUrl = null;
+    let sessionId = null;
     let msgId = 1;
 
     const log = document.getElementById("log");
@@ -138,14 +138,46 @@ const TEST_PAGE_HTML = `<!DOCTYPE html>
       const body = JSON.stringify({ jsonrpc: "2.0", id, method, params });
       addLog("-> " + method);
 
-      const res = await fetch(sessionUrl, {
+      const headers = {
+        "Content-Type": "application/json",
+        "Accept": "application/json, text/event-stream"
+      };
+      if (sessionId) {
+        headers["Mcp-Session-Id"] = sessionId;
+      }
+
+      const res = await fetch(mcpUrl, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body
       });
 
+      // Capture session ID from response
+      const newSessionId = res.headers.get("Mcp-Session-Id");
+      if (newSessionId) {
+        sessionId = newSessionId;
+        addLog("Session: " + sessionId.substring(0, 8) + "...");
+      }
+
       const text = await res.text();
-      const data = JSON.parse(text);
+
+      // Parse SSE response format
+      let data;
+      if (text.startsWith("event:") || text.startsWith("data:")) {
+        const lines = text.split("\\n");
+        for (const line of lines) {
+          if (line.startsWith("data: ")) {
+            data = JSON.parse(line.substring(6));
+            break;
+          }
+        }
+      } else {
+        data = JSON.parse(text);
+      }
+
+      if (!data) {
+        throw new Error("No data in response");
+      }
 
       if (data.error) {
         addLog("<- Error: " + data.error.message);
@@ -161,27 +193,7 @@ const TEST_PAGE_HTML = `<!DOCTYPE html>
         addLog("Connecting to " + mcpUrl);
         setStatus("connecting", "Connecting...");
 
-        // Open SSE connection to get session URL
-        const sse = new EventSource(mcpUrl);
-
-        await new Promise((resolve, reject) => {
-          sse.onopen = () => addLog("SSE connection opened");
-
-          sse.addEventListener("endpoint", (e) => {
-            sessionUrl = new URL(e.data, mcpUrl).href;
-            addLog("Session URL: " + sessionUrl);
-            resolve();
-          });
-
-          sse.onerror = (e) => {
-            addLog("SSE error");
-            reject(new Error("SSE connection failed"));
-          };
-
-          setTimeout(() => reject(new Error("Connection timeout")), 10000);
-        });
-
-        // Initialize MCP session
+        // Initialize MCP session via HTTP POST
         const initResult = await sendMessage("initialize", {
           protocolVersion: "2024-11-05",
           capabilities: {},
@@ -190,9 +202,13 @@ const TEST_PAGE_HTML = `<!DOCTYPE html>
         addLog("Server: " + initResult.serverInfo.name + " v" + initResult.serverInfo.version);
 
         // Send initialized notification
-        await fetch(sessionUrl, {
+        await fetch(mcpUrl, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            "Accept": "application/json, text/event-stream",
+            "Mcp-Session-Id": sessionId
+          },
           body: JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" })
         });
 
