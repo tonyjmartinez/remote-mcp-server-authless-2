@@ -1,5 +1,5 @@
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { McpAgent } from "agents/mcp";
+import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { McpAgent, createMcpHandler } from "agents/mcp";
 import { z } from "zod";
 
 // Helper to create UI resources for MCP-UI
@@ -23,11 +23,20 @@ export class MyMCP extends McpAgent {
 	async init() {
 		// Register resources/read endpoint for UI resources
 		this.server.resource(
-			"ui://*",
-			async (uri: string) => {
-				const resource = this.uiResources.get(uri);
+			"UI Resources",
+			new ResourceTemplate("ui://*", {
+				list: async () => ({
+					resources: Array.from(this.uiResources.values()).map(r => ({
+						uri: r.uri,
+						name: r.uri.split('/').pop() || 'resource',
+						mimeType: r.mimeType,
+					})),
+				}),
+			}),
+			async (uri) => {
+				const resource = this.uiResources.get(uri.href);
 				if (!resource) {
-					throw new Error(`Resource not found: ${uri}`);
+					throw new Error(`Resource not found: ${uri.href}`);
 				}
 				return {
 					contents: [
@@ -629,62 +638,6 @@ export class MyMCP extends McpAgent {
 		);
 	}
 
-	static serve(basePath: string) {
-		let instance: MyMCP | null = null;
-
-		return {
-			async fetch(request: Request, env: any, ctx: any) {
-				try {
-					if (!instance) {
-						instance = new MyMCP();
-						await instance.init();
-					}
-
-					// Handle HTTP request to MCP server
-					try {
-						const body = await request.text();
-						if (!body) {
-							return new Response(JSON.stringify({ error: "Empty request body" }), {
-								status: 400,
-								headers: { "Content-Type": "application/json" },
-							});
-						}
-
-						const data = JSON.parse(body);
-
-						// Try to call the server's message handler
-						const handler = (instance.server as any).onMessage || (instance.server as any).handleMessage || (instance.server as any).request;
-						if (handler) {
-							const result = await handler.call(instance.server, data);
-							return new Response(JSON.stringify(result), {
-								headers: { "Content-Type": "application/json" },
-							});
-						}
-
-						// Fallback: assume the server has a fetch method
-						if ((instance.server as any).fetch) {
-							return await (instance.server as any).fetch(request);
-						}
-
-						return new Response(JSON.stringify({ error: "No handler found on server" }), {
-							status: 500,
-							headers: { "Content-Type": "application/json" },
-						});
-					} catch (parseError: any) {
-						return new Response(JSON.stringify({ error: `Failed to parse request: ${parseError.message}` }), {
-							status: 400,
-							headers: { "Content-Type": "application/json" },
-						});
-					}
-				} catch (initError: any) {
-					return new Response(JSON.stringify({ error: `Failed to initialize server: ${initError.message}` }), {
-						status: 500,
-						headers: { "Content-Type": "application/json" },
-					});
-				}
-			},
-		};
-	}
 }
 
 const TEST_PAGE_HTML = `<!DOCTYPE html>
