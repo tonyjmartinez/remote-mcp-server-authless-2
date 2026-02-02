@@ -628,6 +628,63 @@ export class MyMCP extends McpAgent {
 			},
 		);
 	}
+
+	static serve(basePath: string) {
+		let instance: MyMCP | null = null;
+
+		return {
+			async fetch(request: Request, env: any, ctx: any) {
+				try {
+					if (!instance) {
+						instance = new MyMCP();
+						await instance.init();
+					}
+
+					// Handle HTTP request to MCP server
+					try {
+						const body = await request.text();
+						if (!body) {
+							return new Response(JSON.stringify({ error: "Empty request body" }), {
+								status: 400,
+								headers: { "Content-Type": "application/json" },
+							});
+						}
+
+						const data = JSON.parse(body);
+
+						// Try to call the server's message handler
+						const handler = (instance.server as any).onMessage || (instance.server as any).handleMessage || (instance.server as any).request;
+						if (handler) {
+							const result = await handler.call(instance.server, data);
+							return new Response(JSON.stringify(result), {
+								headers: { "Content-Type": "application/json" },
+							});
+						}
+
+						// Fallback: assume the server has a fetch method
+						if ((instance.server as any).fetch) {
+							return await (instance.server as any).fetch(request);
+						}
+
+						return new Response(JSON.stringify({ error: "No handler found on server" }), {
+							status: 500,
+							headers: { "Content-Type": "application/json" },
+						});
+					} catch (parseError: any) {
+						return new Response(JSON.stringify({ error: `Failed to parse request: ${parseError.message}` }), {
+							status: 400,
+							headers: { "Content-Type": "application/json" },
+						});
+					}
+				} catch (initError: any) {
+					return new Response(JSON.stringify({ error: `Failed to initialize server: ${initError.message}` }), {
+						status: 500,
+						headers: { "Content-Type": "application/json" },
+					});
+				}
+			},
+		};
+	}
 }
 
 const TEST_PAGE_HTML = `<!DOCTYPE html>
@@ -1157,12 +1214,23 @@ const TEST_PAGE_HTML = `<!DOCTYPE html>
 </body>
 </html>`;
 
+// Create a singleton MCP server instance
+const mcpHandler = MyMCP.serve("/mcp");
+
 export default {
 	fetch(request: Request, env: Env, ctx: ExecutionContext) {
 		const url = new URL(request.url);
 
 		if (url.pathname === "/mcp") {
-			return MyMCP.serve("/mcp").fetch(request, env, ctx);
+			try {
+				return mcpHandler.fetch(request, env, ctx);
+			} catch (error: any) {
+				console.error("MCP fetch error:", error);
+				return new Response(JSON.stringify({ error: error.message }), {
+					status: 500,
+					headers: { "Content-Type": "application/json" },
+				});
+			}
 		}
 
 		if (url.pathname === "/" || url.pathname === "/test") {
