@@ -2,6 +2,15 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { McpAgent } from "agents/mcp";
 import { z } from "zod";
 
+// Helper to create UI resources for MCP-UI
+function createUIResource(uri: string, htmlContent: string) {
+	return {
+		uri,
+		mimeType: "text/html;profile=mcp-app",
+		blob: Buffer.from(htmlContent).toString("base64"),
+	};
+}
+
 // Define our MCP agent with tools
 export class MyMCP extends McpAgent {
 	server = new McpServer({
@@ -9,7 +18,29 @@ export class MyMCP extends McpAgent {
 		version: "2.0.0",
 	});
 
+	private uiResources: Map<string, { uri: string; mimeType: string; blob: string }> = new Map();
+
 	async init() {
+		// Register resources/read endpoint for UI resources
+		this.server.resource(
+			"ui://*",
+			async (uri: string) => {
+				const resource = this.uiResources.get(uri);
+				if (!resource) {
+					throw new Error(`Resource not found: ${uri}`);
+				}
+				return {
+					contents: [
+						{
+							uri: resource.uri,
+							mimeType: resource.mimeType,
+							blob: resource.blob,
+						},
+					],
+				};
+			},
+		);
+
 		// Simple addition tool with rich response
 		this.server.tool("add", { a: z.number(), b: z.number() }, async ({ a, b }) => {
 			const result = a + b;
@@ -144,19 +175,24 @@ export class MyMCP extends McpAgent {
   </div>
 </div>`;
 
+				// Create and register UI resource
+				const resourceUri = `ui://weather-${city.replace(/\s+/g, "-").toLowerCase()}-${Date.now()}`;
+				const uiResource = createUIResource(resourceUri, html);
+				this.uiResources.set(resourceUri, uiResource);
+
 				return {
 					content: [
-						{
-							type: "text",
-							text: html,
-							annotations: { priority: 1.0, audience: ["user"] },
-						},
 						{
 							type: "text",
 							text: `Weather data for ${city}: ${temperature}°C, ${condition}, ${humidity}% humidity`,
 							annotations: { audience: ["assistant"] },
 						},
 					],
+					_meta: {
+						ui: {
+							resourceUri,
+						},
+					},
 				};
 			},
 		);
@@ -194,19 +230,24 @@ export class MyMCP extends McpAgent {
   </div>
 </div>`;
 
+				// Create and register UI resource
+				const resourceUri = `ui://table-${title.replace(/\s+/g, "-").toLowerCase()}-${Date.now()}`;
+				const uiResource = createUIResource(resourceUri, html);
+				this.uiResources.set(resourceUri, uiResource);
+
 				return {
 					content: [
-						{
-							type: "text",
-							text: html,
-							annotations: { priority: 1.0, audience: ["user"] },
-						},
 						{
 							type: "text",
 							text: `Table "${title}" with ${headers.length} columns and ${rows.length} rows`,
 							annotations: { audience: ["assistant"] },
 						},
 					],
+					_meta: {
+						ui: {
+							resourceUri,
+						},
+					},
 				};
 			},
 		);
@@ -255,19 +296,24 @@ export class MyMCP extends McpAgent {
   </div>
 </div>`;
 
+				// Create and register UI resource
+				const resourceUri = `ui://progress-${title.replace(/\s+/g, "-").toLowerCase()}-${Date.now()}`;
+				const uiResource = createUIResource(resourceUri, html);
+				this.uiResources.set(resourceUri, uiResource);
+
 				return {
 					content: [
-						{
-							type: "text",
-							text: html,
-							annotations: { priority: 1.0, audience: ["user"] },
-						},
 						{
 							type: "text",
 							text: `Progress: ${title} - ${status} at ${progress}%: ${message}`,
 							annotations: { audience: ["assistant"] },
 						},
 					],
+					_meta: {
+						ui: {
+							resourceUri,
+						},
+					},
 				};
 			},
 		);
@@ -306,19 +352,24 @@ export class MyMCP extends McpAgent {
   </div>
 </div>`;
 
+				// Create and register UI resource
+				const resourceUri = `ui://alert-${type}-${Date.now()}`;
+				const uiResource = createUIResource(resourceUri, html);
+				this.uiResources.set(resourceUri, uiResource);
+
 				return {
 					content: [
-						{
-							type: "text",
-							text: html,
-							annotations: { priority: 1.0, audience: ["user"] },
-						},
 						{
 							type: "text",
 							text: `Alert [${type.toUpperCase()}] ${title}: ${message}`,
 							annotations: { audience: ["assistant"] },
 						},
 					],
+					_meta: {
+						ui: {
+							resourceUri,
+						},
+					},
 				};
 			},
 		);
@@ -368,19 +419,24 @@ export class MyMCP extends McpAgent {
   </div>
 </div>`;
 
+				// Create and register UI resource
+				const resourceUri = `ui://stats-${Date.now()}`;
+				const uiResource = createUIResource(resourceUri, html);
+				this.uiResources.set(resourceUri, uiResource);
+
 				return {
 					content: [
-						{
-							type: "text",
-							text: html,
-							annotations: { priority: 1.0, audience: ["user"] },
-						},
 						{
 							type: "text",
 							text: `Stats displayed: ${stats.map(s => `${s.label}: ${s.value}`).join(", ")}`,
 							annotations: { audience: ["assistant"] },
 						},
 					],
+					_meta: {
+						ui: {
+							resourceUri,
+						},
+					},
 				};
 			},
 		);
@@ -416,19 +472,24 @@ export class MyMCP extends McpAgent {
   </div>
 </div>`;
 
+				// Create and register UI resource
+				const resourceUri = `ui://code-${language}-${Date.now()}`;
+				const uiResource = createUIResource(resourceUri, html);
+				this.uiResources.set(resourceUri, uiResource);
+
 				return {
 					content: [
-						{
-							type: "text",
-							text: html,
-							annotations: { priority: 1.0, audience: ["user"] },
-						},
 						{
 							type: "text",
 							text: `Code snippet (${language}): ${lines.length} lines${filename ? ` from ${filename}` : ""}`,
 							annotations: { audience: ["assistant"] },
 						},
 					],
+					_meta: {
+						ui: {
+							resourceUri,
+						},
+					},
 				};
 			},
 		);
@@ -471,19 +532,24 @@ export class MyMCP extends McpAgent {
   </div>
 </div>`;
 
+				// Create and register UI resource
+				const resourceUri = `ui://user-${name.replace(/\s+/g, "-").toLowerCase()}-${Date.now()}`;
+				const uiResource = createUIResource(resourceUri, html);
+				this.uiResources.set(resourceUri, uiResource);
+
 				return {
 					content: [
-						{
-							type: "text",
-							text: html,
-							annotations: { priority: 1.0, audience: ["user"] },
-						},
 						{
 							type: "text",
 							text: `User profile: ${name}, ${role}`,
 							annotations: { audience: ["assistant"] },
 						},
 					],
+					_meta: {
+						ui: {
+							resourceUri,
+						},
+					},
 				};
 			},
 		);
@@ -540,19 +606,24 @@ export class MyMCP extends McpAgent {
   </div>
 </div>`;
 
+				// Create and register UI resource
+				const resourceUri = `ui://timeline-${title.replace(/\s+/g, "-").toLowerCase()}-${Date.now()}`;
+				const uiResource = createUIResource(resourceUri, html);
+				this.uiResources.set(resourceUri, uiResource);
+
 				return {
 					content: [
-						{
-							type: "text",
-							text: html,
-							annotations: { priority: 1.0, audience: ["user"] },
-						},
 						{
 							type: "text",
 							text: `Timeline "${title}" with ${steps.length} steps: ${steps.map(s => s.title).join(" → ")}`,
 							annotations: { audience: ["assistant"] },
 						},
 					],
+					_meta: {
+						ui: {
+							resourceUri,
+						},
+					},
 				};
 			},
 		);
@@ -730,6 +801,23 @@ const TEST_PAGE_HTML = `<!DOCTYPE html>
       document.getElementById("timelineBtn").disabled = !connected;
     }
 
+    // Helper function to render MCP-UI resources
+    async function renderUIResource(toolRes, resultElement) {
+      if (toolRes._meta && toolRes._meta.ui && toolRes._meta.ui.resourceUri) {
+        const resourceRes = await sendMessage("resources/read", {
+          uri: toolRes._meta.ui.resourceUri
+        });
+        const html = atob(resourceRes.contents[0].blob);
+        resultElement.innerHTML = html;
+      } else {
+        // Fallback for old format
+        const html = toolRes.content[0].text;
+        resultElement.innerHTML = html;
+      }
+      resultElement.className = "result";
+      resultElement.style.display = "block";
+    }
+
     async function sendMessage(method, params = {}) {
       const id = msgId++;
       const body = JSON.stringify({ jsonrpc: "2.0", id, method, params });
@@ -877,10 +965,7 @@ const TEST_PAGE_HTML = `<!DOCTYPE html>
           name: "get_weather_card",
           arguments: { city, temperature, condition, humidity }
         });
-        const html = res.content[0].text;
-        result.innerHTML = html;
-        result.className = "result";
-        result.style.display = "block";
+        await renderUIResource(res, result);
       } catch (e) {
         result.textContent = "Error: " + e.message;
         result.className = "result error";
@@ -905,10 +990,7 @@ const TEST_PAGE_HTML = `<!DOCTYPE html>
             ]
           }
         });
-        const html = res.content[0].text;
-        result.innerHTML = html;
-        result.className = "result";
-        result.style.display = "block";
+        await renderUIResource(res, result);
       } catch (e) {
         result.textContent = "Error: " + e.message;
         result.className = "result error";
@@ -928,10 +1010,7 @@ const TEST_PAGE_HTML = `<!DOCTYPE html>
           name: "render_progress_card",
           arguments: { title, progress, status, message }
         });
-        const html = res.content[0].text;
-        result.innerHTML = html;
-        result.className = "result";
-        result.style.display = "block";
+        await renderUIResource(res, result);
       } catch (e) {
         result.textContent = "Error: " + e.message;
         result.className = "result error";
@@ -950,10 +1029,7 @@ const TEST_PAGE_HTML = `<!DOCTYPE html>
           name: "render_alert",
           arguments: { type, title, message, dismissible: true }
         });
-        const html = res.content[0].text;
-        result.innerHTML = html;
-        result.className = "result";
-        result.style.display = "block";
+        await renderUIResource(res, result);
       } catch (e) {
         result.textContent = "Error: " + e.message;
         result.className = "result error";
@@ -976,10 +1052,7 @@ const TEST_PAGE_HTML = `<!DOCTYPE html>
             ]
           }
         });
-        const html = res.content[0].text;
-        result.innerHTML = html;
-        result.className = "result";
-        result.style.display = "block";
+        await renderUIResource(res, result);
       } catch (e) {
         result.textContent = "Error: " + e.message;
         result.className = "result error";
@@ -1002,10 +1075,7 @@ const TEST_PAGE_HTML = `<!DOCTYPE html>
             showLineNumbers: true
           }
         });
-        const html = res.content[0].text;
-        result.innerHTML = html;
-        result.className = "result";
-        result.style.display = "block";
+        await renderUIResource(res, result);
       } catch (e) {
         result.textContent = "Error: " + e.message;
         result.className = "result error";
@@ -1030,10 +1100,7 @@ const TEST_PAGE_HTML = `<!DOCTYPE html>
             stats: { posts: 247, followers: 3842, following: 512 }
           }
         });
-        const html = res.content[0].text;
-        result.innerHTML = html;
-        result.className = "result";
-        result.style.display = "block";
+        await renderUIResource(res, result);
       } catch (e) {
         result.textContent = "Error: " + e.message;
         result.className = "result error";
@@ -1077,10 +1144,7 @@ const TEST_PAGE_HTML = `<!DOCTYPE html>
             ]
           }
         });
-        const html = res.content[0].text;
-        result.innerHTML = html;
-        result.className = "result";
-        result.style.display = "block";
+        await renderUIResource(res, result);
       } catch (e) {
         result.textContent = "Error: " + e.message;
         result.className = "result error";
