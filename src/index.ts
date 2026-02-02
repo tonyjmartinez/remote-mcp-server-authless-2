@@ -34,9 +34,12 @@ export class MyMCP extends McpAgent {
 				}),
 			}),
 			async (uri) => {
-				const resource = this.uiResources.get(uri.href);
+				// Extract the URI string from the URL object
+				// Handle both string and URL object formats
+				const uriString = typeof uri === 'string' ? uri : uri.toString();
+				const resource = this.uiResources.get(uriString);
 				if (!resource) {
-					throw new Error(`Resource not found: ${uri.href}`);
+					throw new Error(`Resource not found: ${uriString}`);
 				}
 				return {
 					contents: [
