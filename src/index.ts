@@ -612,6 +612,90 @@ const TEST_PAGE_HTML = `<!DOCTYPE html>
   </div>
 
   <div class="card">
+    <h3>Weather Card</h3>
+    <label>City</label><input type="text" id="weatherCity" value="San Francisco">
+    <label>Temperature (°C)</label><input type="number" id="weatherTemp" value="22">
+    <label>Condition</label>
+    <select id="weatherCondition">
+      <option value="sunny">Sunny</option>
+      <option value="cloudy">Cloudy</option>
+      <option value="rainy">Rainy</option>
+      <option value="snowy">Snowy</option>
+      <option value="stormy">Stormy</option>
+    </select>
+    <label>Humidity (%)</label><input type="number" id="weatherHumidity" value="65" min="0" max="100">
+    <button id="weatherBtn" onclick="testWeather()" disabled>Get Weather Card</button>
+    <div class="result" id="weatherResult" style="display:none"></div>
+  </div>
+
+  <div class="card">
+    <h3>Data Table</h3>
+    <label>Title</label><input type="text" id="tableTitle" value="Sales Data">
+    <button id="tableBtn" onclick="testDataTable()" disabled>Render Data Table</button>
+    <div class="result" id="tableResult" style="display:none"></div>
+  </div>
+
+  <div class="card">
+    <h3>Progress Card</h3>
+    <label>Title</label><input type="text" id="progressTitle" value="Deployment">
+    <label>Progress (%)</label><input type="number" id="progressValue" value="75" min="0" max="100">
+    <label>Status</label>
+    <select id="progressStatus">
+      <option value="pending">Pending</option>
+      <option value="in_progress">In Progress</option>
+      <option value="completed">Completed</option>
+      <option value="failed">Failed</option>
+    </select>
+    <label>Message</label><input type="text" id="progressMessage" value="Pushing to production...">
+    <button id="progressBtn" onclick="testProgress()" disabled>Render Progress Card</button>
+    <div class="result" id="progressResult" style="display:none"></div>
+  </div>
+
+  <div class="card">
+    <h3>Alert</h3>
+    <label>Type</label>
+    <select id="alertType">
+      <option value="info">Info</option>
+      <option value="success">Success</option>
+      <option value="warning">Warning</option>
+      <option value="error">Error</option>
+    </select>
+    <label>Title</label><input type="text" id="alertTitle" value="Important">
+    <label>Message</label><input type="text" id="alertMessage" value="This is an important notification">
+    <button id="alertBtn" onclick="testAlert()" disabled>Render Alert</button>
+    <div class="result" id="alertResult" style="display:none"></div>
+  </div>
+
+  <div class="card">
+    <h3>Stats</h3>
+    <button id="statsBtn" onclick="testStats()" disabled>Render Stats</button>
+    <div class="result" id="statsResult" style="display:none"></div>
+  </div>
+
+  <div class="card">
+    <h3>Code Snippet</h3>
+    <label>Language</label><input type="text" id="codeLanguage" value="javascript">
+    <label>Filename</label><input type="text" id="codeFilename" value="example.js">
+    <button id="codeBtn" onclick="testCodeSnippet()" disabled>Render Code Snippet</button>
+    <div class="result" id="codeResult" style="display:none"></div>
+  </div>
+
+  <div class="card">
+    <h3>User Card</h3>
+    <label>Name</label><input type="text" id="userName" value="Alex Johnson">
+    <label>Role</label><input type="text" id="userRole" value="Product Designer">
+    <label>Avatar Emoji</label><input type="text" id="userAvatar" value="👨‍💻" maxlength="2">
+    <button id="userBtn" onclick="testUserCard()" disabled>Render User Card</button>
+    <div class="result" id="userResult" style="display:none"></div>
+  </div>
+
+  <div class="card">
+    <h3>Timeline</h3>
+    <button id="timelineBtn" onclick="testTimeline()" disabled>Render Timeline</button>
+    <div class="result" id="timelineResult" style="display:none"></div>
+  </div>
+
+  <div class="card">
     <h3>Connection Log</h3>
     <div id="log"></div>
   </div>
@@ -636,6 +720,14 @@ const TEST_PAGE_HTML = `<!DOCTYPE html>
       const connected = state === "connected";
       document.getElementById("addBtn").disabled = !connected;
       document.getElementById("calcBtn").disabled = !connected;
+      document.getElementById("weatherBtn").disabled = !connected;
+      document.getElementById("tableBtn").disabled = !connected;
+      document.getElementById("progressBtn").disabled = !connected;
+      document.getElementById("alertBtn").disabled = !connected;
+      document.getElementById("statsBtn").disabled = !connected;
+      document.getElementById("codeBtn").disabled = !connected;
+      document.getElementById("userBtn").disabled = !connected;
+      document.getElementById("timelineBtn").disabled = !connected;
     }
 
     async function sendMessage(method, params = {}) {
@@ -764,6 +856,229 @@ const TEST_PAGE_HTML = `<!DOCTYPE html>
         const symbols = { add: "+", subtract: "-", multiply: "x", divide: "/" };
         const text = res.content[0].text;
         result.textContent = a + " " + symbols[op] + " " + b + " = " + text;
+        result.className = "result";
+        result.style.display = "block";
+      } catch (e) {
+        result.textContent = "Error: " + e.message;
+        result.className = "result error";
+        result.style.display = "block";
+      }
+    };
+
+    window.testWeather = async function() {
+      const city = document.getElementById("weatherCity").value;
+      const temperature = parseFloat(document.getElementById("weatherTemp").value);
+      const condition = document.getElementById("weatherCondition").value;
+      const humidity = parseFloat(document.getElementById("weatherHumidity").value);
+      const result = document.getElementById("weatherResult");
+
+      try {
+        const res = await sendMessage("tools/call", {
+          name: "get_weather_card",
+          arguments: { city, temperature, condition, humidity }
+        });
+        const html = res.content[0].text;
+        result.innerHTML = html;
+        result.className = "result";
+        result.style.display = "block";
+      } catch (e) {
+        result.textContent = "Error: " + e.message;
+        result.className = "result error";
+        result.style.display = "block";
+      }
+    };
+
+    window.testDataTable = async function() {
+      const title = document.getElementById("tableTitle").value;
+      const result = document.getElementById("tableResult");
+
+      try {
+        const res = await sendMessage("tools/call", {
+          name: "render_data_table",
+          arguments: {
+            title: title,
+            headers: ["Product", "Q1", "Q2", "Q3", "Q4"],
+            rows: [
+              ["Laptops", "$45K", "$52K", "$58K", "$65K"],
+              ["Tablets", "$22K", "$28K", "$31K", "$35K"],
+              ["Phones", "$89K", "$95K", "$102K", "$110K"]
+            ]
+          }
+        });
+        const html = res.content[0].text;
+        result.innerHTML = html;
+        result.className = "result";
+        result.style.display = "block";
+      } catch (e) {
+        result.textContent = "Error: " + e.message;
+        result.className = "result error";
+        result.style.display = "block";
+      }
+    };
+
+    window.testProgress = async function() {
+      const title = document.getElementById("progressTitle").value;
+      const progress = parseFloat(document.getElementById("progressValue").value);
+      const status = document.getElementById("progressStatus").value;
+      const message = document.getElementById("progressMessage").value;
+      const result = document.getElementById("progressResult");
+
+      try {
+        const res = await sendMessage("tools/call", {
+          name: "render_progress_card",
+          arguments: { title, progress, status, message }
+        });
+        const html = res.content[0].text;
+        result.innerHTML = html;
+        result.className = "result";
+        result.style.display = "block";
+      } catch (e) {
+        result.textContent = "Error: " + e.message;
+        result.className = "result error";
+        result.style.display = "block";
+      }
+    };
+
+    window.testAlert = async function() {
+      const type = document.getElementById("alertType").value;
+      const title = document.getElementById("alertTitle").value;
+      const message = document.getElementById("alertMessage").value;
+      const result = document.getElementById("alertResult");
+
+      try {
+        const res = await sendMessage("tools/call", {
+          name: "render_alert",
+          arguments: { type, title, message, dismissible: true }
+        });
+        const html = res.content[0].text;
+        result.innerHTML = html;
+        result.className = "result";
+        result.style.display = "block";
+      } catch (e) {
+        result.textContent = "Error: " + e.message;
+        result.className = "result error";
+        result.style.display = "block";
+      }
+    };
+
+    window.testStats = async function() {
+      const result = document.getElementById("statsResult");
+
+      try {
+        const res = await sendMessage("tools/call", {
+          name: "render_stats",
+          arguments: {
+            stats: [
+              { label: "Revenue", value: "$85.2K", change: "+12.5%", changeType: "positive" },
+              { label: "Users", value: "2,543", change: "+8.2%", changeType: "positive" },
+              { label: "Bounce Rate", value: "32.1%", change: "-2.3%", changeType: "positive" },
+              { label: "Avg Session", value: "4m 32s", change: "+15s", changeType: "positive" }
+            ]
+          }
+        });
+        const html = res.content[0].text;
+        result.innerHTML = html;
+        result.className = "result";
+        result.style.display = "block";
+      } catch (e) {
+        result.textContent = "Error: " + e.message;
+        result.className = "result error";
+        result.style.display = "block";
+      }
+    };
+
+    window.testCodeSnippet = async function() {
+      const language = document.getElementById("codeLanguage").value;
+      const filename = document.getElementById("codeFilename").value;
+      const result = document.getElementById("codeResult");
+
+      try {
+        const res = await sendMessage("tools/call", {
+          name: "render_code_snippet",
+          arguments: {
+            code: "function fibonacci(n) {\\n  if (n <= 1) return n;\\n  return fibonacci(n - 1) + fibonacci(n - 2);\\n}\\n\\nconst result = fibonacci(10);\\nconsole.log(result);",
+            language: language,
+            filename: filename,
+            showLineNumbers: true
+          }
+        });
+        const html = res.content[0].text;
+        result.innerHTML = html;
+        result.className = "result";
+        result.style.display = "block";
+      } catch (e) {
+        result.textContent = "Error: " + e.message;
+        result.className = "result error";
+        result.style.display = "block";
+      }
+    };
+
+    window.testUserCard = async function() {
+      const name = document.getElementById("userName").value;
+      const role = document.getElementById("userRole").value;
+      const avatar_emoji = document.getElementById("userAvatar").value;
+      const result = document.getElementById("userResult");
+
+      try {
+        const res = await sendMessage("tools/call", {
+          name: "render_user_card",
+          arguments: {
+            name: name,
+            role: role,
+            avatar_emoji: avatar_emoji,
+            bio: "Passionate about design and user experience",
+            stats: { posts: 247, followers: 3842, following: 512 }
+          }
+        });
+        const html = res.content[0].text;
+        result.innerHTML = html;
+        result.className = "result";
+        result.style.display = "block";
+      } catch (e) {
+        result.textContent = "Error: " + e.message;
+        result.className = "result error";
+        result.style.display = "block";
+      }
+    };
+
+    window.testTimeline = async function() {
+      const result = document.getElementById("timelineResult");
+
+      try {
+        const res = await sendMessage("tools/call", {
+          name: "render_timeline",
+          arguments: {
+            title: "Project Deployment",
+            steps: [
+              {
+                title: "Planning",
+                description: "Define requirements and create specs",
+                status: "completed",
+                time: "Jan 15"
+              },
+              {
+                title: "Development",
+                description: "Build and test the application",
+                status: "completed",
+                time: "Feb 10"
+              },
+              {
+                title: "Review",
+                description: "Code review and quality assurance",
+                status: "current",
+                time: "Feb 28"
+              },
+              {
+                title: "Deployment",
+                description: "Deploy to production servers",
+                status: "upcoming",
+                time: "Mar 15"
+              }
+            ]
+          }
+        });
+        const html = res.content[0].text;
+        result.innerHTML = html;
         result.className = "result";
         result.style.display = "block";
       } catch (e) {
