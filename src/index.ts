@@ -18,7 +18,7 @@ export class MyMCP extends McpAgent {
 		version: "2.0.0",
 	});
 
-	private uiResources: Map<string, { uri: string; mimeType: string; blob: string }> = new Map();
+	private static uiResources: Map<string, { uri: string; mimeType: string; blob: string }> = new Map();
 
 	async init() {
 		// Register resources/read endpoint for UI resources
@@ -26,7 +26,7 @@ export class MyMCP extends McpAgent {
 			"UI Resources",
 			new ResourceTemplate("ui://*", {
 				list: async () => ({
-					resources: Array.from(this.uiResources.values()).map(r => ({
+					resources: Array.from(MyMCP.uiResources.values()).map(r => ({
 						uri: r.uri,
 						name: r.uri.split('/').pop() || 'resource',
 						mimeType: r.mimeType,
@@ -37,7 +37,7 @@ export class MyMCP extends McpAgent {
 				// Extract the URI string from the URL object
 				// Handle both string and URL object formats
 				const uriString = typeof uri === 'string' ? uri : uri.toString();
-				const resource = this.uiResources.get(uriString);
+				const resource = MyMCP.uiResources.get(uriString);
 				if (!resource) {
 					throw new Error(`Resource not found: ${uriString}`);
 				}
@@ -190,7 +190,7 @@ export class MyMCP extends McpAgent {
 				// Create and register UI resource
 				const resourceUri = `ui://weather-${city.replace(/\s+/g, "-").toLowerCase()}-${Date.now()}`;
 				const uiResource = createUIResource(resourceUri, html);
-				this.uiResources.set(resourceUri, uiResource);
+				MyMCP.uiResources.set(resourceUri, uiResource);
 
 				return {
 					content: [
@@ -245,7 +245,7 @@ export class MyMCP extends McpAgent {
 				// Create and register UI resource
 				const resourceUri = `ui://table-${title.replace(/\s+/g, "-").toLowerCase()}-${Date.now()}`;
 				const uiResource = createUIResource(resourceUri, html);
-				this.uiResources.set(resourceUri, uiResource);
+				MyMCP.uiResources.set(resourceUri, uiResource);
 
 				return {
 					content: [
@@ -311,7 +311,7 @@ export class MyMCP extends McpAgent {
 				// Create and register UI resource
 				const resourceUri = `ui://progress-${title.replace(/\s+/g, "-").toLowerCase()}-${Date.now()}`;
 				const uiResource = createUIResource(resourceUri, html);
-				this.uiResources.set(resourceUri, uiResource);
+				MyMCP.uiResources.set(resourceUri, uiResource);
 
 				return {
 					content: [
@@ -367,7 +367,7 @@ export class MyMCP extends McpAgent {
 				// Create and register UI resource
 				const resourceUri = `ui://alert-${type}-${Date.now()}`;
 				const uiResource = createUIResource(resourceUri, html);
-				this.uiResources.set(resourceUri, uiResource);
+				MyMCP.uiResources.set(resourceUri, uiResource);
 
 				return {
 					content: [
@@ -434,7 +434,7 @@ export class MyMCP extends McpAgent {
 				// Create and register UI resource
 				const resourceUri = `ui://stats-${Date.now()}`;
 				const uiResource = createUIResource(resourceUri, html);
-				this.uiResources.set(resourceUri, uiResource);
+				MyMCP.uiResources.set(resourceUri, uiResource);
 
 				return {
 					content: [
@@ -487,7 +487,7 @@ export class MyMCP extends McpAgent {
 				// Create and register UI resource
 				const resourceUri = `ui://code-${language}-${Date.now()}`;
 				const uiResource = createUIResource(resourceUri, html);
-				this.uiResources.set(resourceUri, uiResource);
+				MyMCP.uiResources.set(resourceUri, uiResource);
 
 				return {
 					content: [
@@ -547,7 +547,7 @@ export class MyMCP extends McpAgent {
 				// Create and register UI resource
 				const resourceUri = `ui://user-${name.replace(/\s+/g, "-").toLowerCase()}-${Date.now()}`;
 				const uiResource = createUIResource(resourceUri, html);
-				this.uiResources.set(resourceUri, uiResource);
+				MyMCP.uiResources.set(resourceUri, uiResource);
 
 				return {
 					content: [
@@ -621,7 +621,7 @@ export class MyMCP extends McpAgent {
 				// Create and register UI resource
 				const resourceUri = `ui://timeline-${title.replace(/\s+/g, "-").toLowerCase()}-${Date.now()}`;
 				const uiResource = createUIResource(resourceUri, html);
-				this.uiResources.set(resourceUri, uiResource);
+				MyMCP.uiResources.set(resourceUri, uiResource);
 
 				return {
 					content: [
