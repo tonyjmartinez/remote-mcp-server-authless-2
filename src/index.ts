@@ -10,12 +10,26 @@ export class MyMCP extends McpAgent {
 	});
 
 	async init() {
-		// Simple addition tool
-		this.server.tool("add", { a: z.number(), b: z.number() }, async ({ a, b }) => ({
-			content: [{ type: "text", text: String(a + b) }],
-		}));
+		// Simple addition tool with rich response
+		this.server.tool("add", { a: z.number(), b: z.number() }, async ({ a, b }) => {
+			const result = a + b;
+			return {
+				content: [
+					{
+						type: "text",
+						text: `${a} + ${b} = ${result}`,
+						annotations: { priority: 1.0, audience: ["user"] },
+					},
+					{
+						type: "text",
+						text: `Sum computed: ${result}`,
+						annotations: { audience: ["assistant"] },
+					},
+				],
+			};
+		});
 
-		// Calculator tool with multiple operations
+		// Calculator tool with multiple operations and rich UI
 		this.server.tool(
 			"calculate",
 			{
@@ -24,6 +38,27 @@ export class MyMCP extends McpAgent {
 				b: z.number(),
 			},
 			async ({ operation, a, b }) => {
+				const symbols: Record<string, string> = {
+					add: "+",
+					subtract: "-",
+					multiply: "×",
+					divide: "÷",
+				};
+
+				// Handle division by zero with isError flag
+				if (operation === "divide" && b === 0) {
+					return {
+						content: [
+							{
+								type: "text",
+								text: "Error: Cannot divide by zero",
+								annotations: { priority: 1.0, audience: ["user"] },
+							},
+						],
+						isError: true,
+					};
+				}
+
 				let result: number;
 				switch (operation) {
 					case "add":
@@ -36,19 +71,24 @@ export class MyMCP extends McpAgent {
 						result = a * b;
 						break;
 					case "divide":
-						if (b === 0)
-							return {
-								content: [
-									{
-										type: "text",
-										text: "Error: Cannot divide by zero",
-									},
-								],
-							};
 						result = a / b;
 						break;
 				}
-				return { content: [{ type: "text", text: String(result) }] };
+
+				return {
+					content: [
+						{
+							type: "text",
+							text: `${a} ${symbols[operation]} ${b} = ${result}`,
+							annotations: { priority: 1.0, audience: ["user"] },
+						},
+						{
+							type: "text",
+							text: `Operation: ${operation}, Operands: [${a}, ${b}], Result: ${result}`,
+							annotations: { audience: ["assistant"] },
+						},
+					],
+				};
 			},
 		);
 	}
