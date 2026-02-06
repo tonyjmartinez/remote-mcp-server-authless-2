@@ -25,6 +25,26 @@ npm run dev -- --port 8787
 bash test-working.sh
 ```
 
+To test a deployed Worker directly (instead of localhost) and simulate multiple agents coordinating tasks:
+
+```bash
+bash test-remote-orchestration.sh https://remote-mcp-server-authless-2.ajosephmartinez.workers.dev
+```
+
+To trigger orchestration directly from an MCP client (like Codex), call the `orchestrate_agents` tool with a prompt:
+
+```json
+{
+  "name": "orchestrate_agents",
+  "arguments": {
+    "prompt": "Plan, analyze, and review a rollout plan for feature X.",
+    "agents": ["planner", "analyst", "reviewer"],
+    "taskType": "report_generation"
+  }
+}
+```
+
+
 ## Customizing your MCP Server
 
 To add your own [tools](https://developers.cloudflare.com/agents/model-context-protocol/tools/) to the MCP server, define each tool inside the `init()` method of `src/index.ts` using `this.server.tool(...)`. 
