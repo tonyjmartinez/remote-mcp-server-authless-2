@@ -691,18 +691,26 @@ export class MyMCP extends McpAgent {
 				taskType: z.enum(["data_processing", "image_generation", "report_generation", "batch_calculation"]).optional().describe("Task type for all agents"),
 			},
 			async ({ prompt, agents, taskType }) => {
-				const agentList = agents?.length ? agents : ["planner", "analyst", "reviewer"];
+				const defaultAgents = [
+					{ name: "staff_software_engineer", role: "Staff Software Engineer" },
+					{ name: "staff_product_manager", role: "Staff Product Manager" },
+					{ name: "staff_project_manager", role: "Staff Project Manager" },
+					{ name: "staff_designer", role: "Staff Designer" },
+				];
+				const roleByAgent = new Map(defaultAgents.map(agent => [agent.name, agent.role]));
+				const agentList = agents?.length ? agents : defaultAgents.map(agent => agent.name);
 				const type = taskType ?? "data_processing";
 
 				const tasks = agentList.map(agent =>
 					this.moltbot.createTask(type, {
 						agent,
+						role: roleByAgent.get(agent) ?? agent,
 						prompt,
 					}),
 				);
 
 				const taskSummary = tasks
-					.map(task => `${task.id} - ${type} - ${task.status} (agent: ${task.params.agent ?? "unknown"})`)
+					.map(task => `${task.id} - ${type} - ${task.status} (agent: ${task.params.agent ?? "unknown"}, role: ${task.params.role ?? "unknown"})`)
 					.join("\n");
 
 				return {
