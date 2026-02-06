@@ -203,6 +203,7 @@ export class MyMCP extends McpAgent {
 					_meta: {
 						ui: {
 							resourceUri,
+							blob: uiResource.blob,
 						},
 					},
 				};
@@ -258,6 +259,7 @@ export class MyMCP extends McpAgent {
 					_meta: {
 						ui: {
 							resourceUri,
+							blob: uiResource.blob,
 						},
 					},
 				};
@@ -324,6 +326,7 @@ export class MyMCP extends McpAgent {
 					_meta: {
 						ui: {
 							resourceUri,
+							blob: uiResource.blob,
 						},
 					},
 				};
@@ -380,6 +383,7 @@ export class MyMCP extends McpAgent {
 					_meta: {
 						ui: {
 							resourceUri,
+							blob: uiResource.blob,
 						},
 					},
 				};
@@ -447,6 +451,7 @@ export class MyMCP extends McpAgent {
 					_meta: {
 						ui: {
 							resourceUri,
+							blob: uiResource.blob,
 						},
 					},
 				};
@@ -500,6 +505,7 @@ export class MyMCP extends McpAgent {
 					_meta: {
 						ui: {
 							resourceUri,
+							blob: uiResource.blob,
 						},
 					},
 				};
@@ -560,6 +566,7 @@ export class MyMCP extends McpAgent {
 					_meta: {
 						ui: {
 							resourceUri,
+							blob: uiResource.blob,
 						},
 					},
 				};
@@ -634,6 +641,7 @@ export class MyMCP extends McpAgent {
 					_meta: {
 						ui: {
 							resourceUri,
+							blob: uiResource.blob,
 						},
 					},
 				};
@@ -816,16 +824,17 @@ const TEST_PAGE_HTML = `<!DOCTYPE html>
 
     // Helper function to render MCP-UI resources
     async function renderUIResource(toolRes, resultElement) {
-      if (toolRes._meta && toolRes._meta.ui && toolRes._meta.ui.resourceUri) {
+      if (toolRes._meta && toolRes._meta.ui && toolRes._meta.ui.blob) {
+        // Use inline blob from tool response (reliable across worker isolates)
+        resultElement.innerHTML = atob(toolRes._meta.ui.blob);
+      } else if (toolRes._meta && toolRes._meta.ui && toolRes._meta.ui.resourceUri) {
+        // Fall back to resources/read
         const resourceRes = await sendMessage("resources/read", {
           uri: toolRes._meta.ui.resourceUri
         });
-        const html = atob(resourceRes.contents[0].blob);
-        resultElement.innerHTML = html;
+        resultElement.innerHTML = atob(resourceRes.contents[0].blob);
       } else {
-        // Fallback for old format
-        const html = toolRes.content[0].text;
-        resultElement.innerHTML = html;
+        resultElement.innerHTML = toolRes.content[0].text;
       }
       resultElement.className = "result";
       resultElement.style.display = "block";
