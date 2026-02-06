@@ -706,6 +706,7 @@ export class MyMCP extends McpAgent {
 						agent,
 						role: roleByAgent.get(agent) ?? agent,
 						prompt,
+						peers: agentList.filter(peer => peer !== agent),
 					}),
 				);
 
@@ -759,6 +760,7 @@ Progress: ${task.progress}%
 Created: ${task.createdAt.toISOString()}
 ${task.startedAt ? `Started: ${task.startedAt.toISOString()}` : ""}
 ${task.completedAt ? `Completed: ${task.completedAt.toISOString()}` : ""}
+${task.messages.length ? `Messages:\n${task.messages.map(message => `- [${message.timestamp.toISOString()}] ${message.from}${message.to ? ` -> ${message.to}` : ""}: ${message.content}`).join("\n")}` : ""}
 ${task.result ? `Result: ${JSON.stringify(task.result)}` : ""}
 ${task.error ? `Error: ${task.error}` : ""}`;
 

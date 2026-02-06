@@ -12,6 +12,14 @@ export interface OrchestrationTask {
 	result?: unknown;
 	error?: string;
 	params: Record<string, unknown>;
+	messages: OrchestrationMessage[];
+}
+
+export interface OrchestrationMessage {
+	timestamp: Date;
+	from: string;
+	to?: string;
+	content: string;
 }
 
 export class MoltbotOrchestrator {
@@ -19,6 +27,8 @@ export class MoltbotOrchestrator {
 
 	createTask(type: TaskType, params: Record<string, unknown>, idPrefix = "task"): OrchestrationTask {
 		const taskId = `${idPrefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+		const agent = String(params.agent ?? "orchestrator");
+		const prompt = typeof params.prompt === "string" ? params.prompt : undefined;
 		const task: OrchestrationTask = {
 			id: taskId,
 			type,
@@ -26,7 +36,17 @@ export class MoltbotOrchestrator {
 			progress: 0,
 			createdAt: new Date(),
 			params,
+			messages: [],
 		};
+
+		if (prompt) {
+			task.messages.push({
+				timestamp: new Date(),
+				from: "orchestrator",
+				to: agent,
+				content: prompt,
+			});
+		}
 
 		this.tasks.set(taskId, task);
 		void this.processTask(taskId);
@@ -72,16 +92,76 @@ export class MoltbotOrchestrator {
 		task.status = "running";
 		task.startedAt = new Date();
 		task.progress = 10;
+		this.logMessage(task, {
+			from: String(task.params.agent ?? "system"),
+			to: "orchestrator",
+			content: `Starting ${task.type} task.`,
+		});
 
 		const steps = [25, 50, 75, 90, 100];
 		for (const progress of steps) {
 			await new Promise(resolve => setTimeout(resolve, 500));
 			task.progress = progress;
+			this.maybeLogProgress(task, progress);
 		}
 
 		task.status = "completed";
 		task.completedAt = new Date();
 		task.result = this.buildResult(taskId, task);
+		this.logMessage(task, {
+			from: String(task.params.agent ?? "system"),
+			to: "orchestrator",
+			content: "Task finished. Handing back results.",
+		});
+	}
+
+	private logMessage(task: OrchestrationTask, message: Omit<OrchestrationMessage, "timestamp">) {
+		task.messages.push({
+			timestamp: new Date(),
+			...message,
+		});
+	}
+
+	private maybeLogProgress(task: OrchestrationTask, progress: number) {
+		const agent = String(task.params.agent ?? "agent");
+		const peers = Array.isArray(task.params.peers) ? task.params.peers : [];
+		if (progress === 25) {
+			this.logMessage(task, {
+				from: agent,
+				to: "orchestrator",
+				content: "Starting analysis and outlining approach.",
+			});
+		}
+		if (progress === 50) {
+			const peer = peers.find(name => name && name !== agent);
+			if (peer) {
+				this.logMessage(task, {
+					from: agent,
+					to: String(peer),
+					content: "Sharing interim findings; let me know if you spot gaps.",
+				});
+			} else {
+				this.logMessage(task, {
+					from: agent,
+					to: "orchestrator",
+					content: "Halfway done; validating assumptions.",
+				});
+			}
+		}
+		if (progress === 75) {
+			this.logMessage(task, {
+				from: agent,
+				to: "orchestrator",
+				content: "Refining output and consolidating notes.",
+			});
+		}
+		if (progress === 90) {
+			this.logMessage(task, {
+				from: agent,
+				to: "orchestrator",
+				content: "Final checks complete; preparing summary.",
+			});
+		}
 	}
 
 	private buildResult(taskId: string, task: OrchestrationTask) {
