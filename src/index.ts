@@ -20,6 +20,20 @@ export class MyMCP extends McpAgent {
 
 	private static uiResources: Map<string, { uri: string; mimeType: string; blob: string }> = new Map();
 
+	// Worker orchestration: Task storage and management
+	private tasks: Map<string, {
+		id: string;
+		type: string;
+		status: "pending" | "running" | "completed" | "failed";
+		progress: number;
+		createdAt: Date;
+		startedAt?: Date;
+		completedAt?: Date;
+		result?: any;
+		error?: string;
+		params: any;
+	}> = new Map();
+
 	async init() {
 		// Register resources/read endpoint for UI resources
 		this.server.resource(
@@ -647,6 +661,330 @@ export class MyMCP extends McpAgent {
 				};
 			},
 		);
+
+		// ==========================================
+		// Worker Orchestration Tools
+		// ==========================================
+
+		// Create a new background task
+		this.server.tool(
+			"create_task",
+			{
+				type: z.enum(["data_processing", "image_generation", "report_generation", "batch_calculation"]).describe("Type of task to create"),
+				params: z.record(z.string(), z.any()).describe("Task parameters"),
+			},
+			async ({ type, params }) => {
+				const taskId = `task_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+
+				const task = {
+					id: taskId,
+					type,
+					status: "pending" as const,
+					progress: 0,
+					createdAt: new Date(),
+					params,
+				};
+
+				this.tasks.set(taskId, task);
+
+				// Simulate background processing
+				this.processTaskInBackground(taskId);
+
+				return {
+					content: [
+						{
+							type: "text",
+							text: `Task created: ${taskId}`,
+							annotations: { priority: 1.0, audience: ["user"] },
+						},
+						{
+							type: "text",
+							text: `Task ID: ${taskId}, Type: ${type}, Status: pending`,
+							annotations: { audience: ["assistant"] },
+						},
+					],
+				};
+			},
+		);
+
+		// Get task status
+		this.server.tool(
+			"get_task_status",
+			{
+				taskId: z.string().describe("Task ID to check"),
+			},
+			async ({ taskId }) => {
+				const task = this.tasks.get(taskId);
+
+				if (!task) {
+					return {
+						content: [
+							{
+								type: "text",
+								text: `Task not found: ${taskId}`,
+								annotations: { priority: 1.0, audience: ["user"] },
+							},
+						],
+						isError: true,
+					};
+				}
+
+				const statusText = `Task ${taskId}:
+Type: ${task.type}
+Status: ${task.status}
+Progress: ${task.progress}%
+Created: ${task.createdAt.toISOString()}
+${task.startedAt ? `Started: ${task.startedAt.toISOString()}` : ""}
+${task.completedAt ? `Completed: ${task.completedAt.toISOString()}` : ""}
+${task.result ? `Result: ${JSON.stringify(task.result)}` : ""}
+${task.error ? `Error: ${task.error}` : ""}`;
+
+				return {
+					content: [
+						{
+							type: "text",
+							text: statusText,
+							annotations: { priority: 1.0, audience: ["user"] },
+						},
+					],
+				};
+			},
+		);
+
+		// List all tasks
+		this.server.tool(
+			"list_tasks",
+			{
+				status: z.enum(["all", "pending", "running", "completed", "failed"]).optional().describe("Filter by status"),
+			},
+			async ({ status = "all" }) => {
+				let tasks = Array.from(this.tasks.values());
+
+				if (status !== "all") {
+					tasks = tasks.filter(t => t.status === status);
+				}
+
+				const taskList = tasks.map(t =>
+					`${t.id} - ${t.type} - ${t.status} (${t.progress}%)`
+				).join("\n");
+
+				return {
+					content: [
+						{
+							type: "text",
+							text: `Tasks (${tasks.length}):\n${taskList || "No tasks found"}`,
+							annotations: { priority: 1.0, audience: ["user"] },
+						},
+					],
+				};
+			},
+		);
+
+		// Process a batch of items in parallel
+		this.server.tool(
+			"process_batch",
+			{
+				items: z.array(z.number()).describe("Items to process"),
+				operation: z.enum(["square", "cube", "factorial"]).describe("Operation to perform"),
+			},
+			async ({ items, operation }) => {
+				const batchId = `batch_${Date.now()}`;
+
+				// Create individual tasks for each item
+				const taskIds = items.map((item, index) => {
+					const taskId = `${batchId}_${index}`;
+					const task = {
+						id: taskId,
+						type: "batch_calculation",
+						status: "pending" as const,
+						progress: 0,
+						createdAt: new Date(),
+						params: { item, operation },
+					};
+					this.tasks.set(taskId, task);
+					this.processTaskInBackground(taskId);
+					return taskId;
+				});
+
+				return {
+					content: [
+						{
+							type: "text",
+							text: `Batch processing started: ${batchId}\nCreated ${taskIds.length} tasks`,
+							annotations: { priority: 1.0, audience: ["user"] },
+						},
+						{
+							type: "text",
+							text: `Batch ID: ${batchId}, Tasks: ${taskIds.join(", ")}`,
+							annotations: { audience: ["assistant"] },
+						},
+					],
+				};
+			},
+		);
+
+		// Get orchestration dashboard
+		this.server.tool(
+			"get_orchestration_dashboard",
+			{},
+			async () => {
+				const allTasks = Array.from(this.tasks.values());
+				const stats = {
+					total: allTasks.length,
+					pending: allTasks.filter(t => t.status === "pending").length,
+					running: allTasks.filter(t => t.status === "running").length,
+					completed: allTasks.filter(t => t.status === "completed").length,
+					failed: allTasks.filter(t => t.status === "failed").length,
+				};
+
+				const recentTasks = allTasks.slice(-5).map(t => ({
+					id: t.id.substring(0, 16),
+					type: t.type,
+					status: t.status,
+					progress: t.progress,
+				}));
+
+				const html = `
+<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px;">
+  <div style="background: #fff; border-radius: 16px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); overflow: hidden; border: 1px solid #e5e7eb;">
+    <div style="padding: 24px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
+      <h2 style="margin: 0; font-size: 24px; font-weight: 600;">⚙️ Worker Orchestration Dashboard</h2>
+    </div>
+
+    <div style="padding: 24px;">
+      <div style="display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 24px;">
+        <div style="flex: 1; min-width: 100px; background: #f3f4f6; border-radius: 8px; padding: 16px; text-align: center;">
+          <div style="font-size: 28px; font-weight: 700; color: #1f2937;">${stats.total}</div>
+          <div style="font-size: 12px; color: #6b7280; margin-top: 4px;">Total</div>
+        </div>
+        <div style="flex: 1; min-width: 100px; background: #fef3c7; border-radius: 8px; padding: 16px; text-align: center;">
+          <div style="font-size: 28px; font-weight: 700; color: #f59e0b;">${stats.pending}</div>
+          <div style="font-size: 12px; color: #92400e; margin-top: 4px;">Pending</div>
+        </div>
+        <div style="flex: 1; min-width: 100px; background: #dbeafe; border-radius: 8px; padding: 16px; text-align: center;">
+          <div style="font-size: 28px; font-weight: 700; color: #3b82f6;">${stats.running}</div>
+          <div style="font-size: 12px; color: #1e40af; margin-top: 4px;">Running</div>
+        </div>
+        <div style="flex: 1; min-width: 100px; background: #d1fae5; border-radius: 8px; padding: 16px; text-align: center;">
+          <div style="font-size: 28px; font-weight: 700; color: #10b981;">${stats.completed}</div>
+          <div style="font-size: 12px; color: #065f46; margin-top: 4px;">Completed</div>
+        </div>
+        <div style="flex: 1; min-width: 100px; background: #fee2e2; border-radius: 8px; padding: 16px; text-align: center;">
+          <div style="font-size: 28px; font-weight: 700; color: #ef4444;">${stats.failed}</div>
+          <div style="font-size: 12px; color: #991b1b; margin-top: 4px;">Failed</div>
+        </div>
+      </div>
+
+      <h3 style="margin: 0 0 12px 0; font-size: 16px; color: #1f2937;">Recent Tasks</h3>
+      <div style="background: #f9fafb; border-radius: 8px; padding: 12px;">
+        ${recentTasks.map(t => `
+          <div style="background: white; border-radius: 6px; padding: 12px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;">
+            <div>
+              <div style="font-size: 13px; font-weight: 600; color: #1f2937;">${t.id}...</div>
+              <div style="font-size: 11px; color: #6b7280; margin-top: 2px;">${t.type}</div>
+            </div>
+            <div style="text-align: right;">
+              <div style="font-size: 12px; padding: 4px 8px; background: ${
+                t.status === "completed" ? "#d1fae5" :
+                t.status === "running" ? "#dbeafe" :
+                t.status === "failed" ? "#fee2e2" : "#fef3c7"
+              }; color: ${
+                t.status === "completed" ? "#065f46" :
+                t.status === "running" ? "#1e40af" :
+                t.status === "failed" ? "#991b1b" : "#92400e"
+              }; border-radius: 4px; font-weight: 600;">${t.status}</div>
+              <div style="font-size: 11px; color: #6b7280; margin-top: 4px;">${t.progress}%</div>
+            </div>
+          </div>
+        `).join("") || '<div style="text-align: center; padding: 20px; color: #9ca3af;">No tasks yet</div>'}
+      </div>
+    </div>
+  </div>
+</div>`;
+
+				const resourceUri = `ui://orchestration-dashboard-${Date.now()}`;
+				const uiResource = createUIResource(resourceUri, html);
+				MyMCP.uiResources.set(resourceUri, uiResource);
+
+				return {
+					content: [
+						{
+							type: "text",
+							text: `Orchestration Dashboard - Total: ${stats.total}, Running: ${stats.running}, Completed: ${stats.completed}`,
+							annotations: { audience: ["assistant"] },
+						},
+					],
+					_meta: {
+						ui: {
+							resourceUri,
+							blob: uiResource.blob,
+						},
+					},
+				};
+			},
+		);
+	}
+
+	// Background task processor
+	private async processTaskInBackground(taskId: string) {
+		const task = this.tasks.get(taskId);
+		if (!task) return;
+
+		// Update to running
+		task.status = "running";
+		task.startedAt = new Date();
+		task.progress = 10;
+
+		// Simulate processing with progress updates
+		const steps = [25, 50, 75, 90, 100];
+		for (const progress of steps) {
+			await new Promise(resolve => setTimeout(resolve, 500)); // Simulate work
+			task.progress = progress;
+
+			if (progress === 100) {
+				// Complete the task
+				task.status = "completed";
+				task.completedAt = new Date();
+
+				// Generate result based on task type
+				switch (task.type) {
+					case "data_processing":
+						task.result = {
+							processed: task.params.records || 100,
+							duration: Date.now() - task.createdAt.getTime()
+						};
+						break;
+					case "batch_calculation":
+						const { item, operation } = task.params;
+						let result;
+						switch (operation) {
+							case "square": result = item * item; break;
+							case "cube": result = item * item * item; break;
+							case "factorial":
+								result = 1;
+								for (let i = 2; i <= item; i++) result *= i;
+								break;
+						}
+						task.result = { input: item, operation, output: result };
+						break;
+					case "image_generation":
+						task.result = {
+							imageUrl: `https://placeholder.example/image_${taskId}.png`,
+							format: "png",
+							size: "1024x1024"
+						};
+						break;
+					case "report_generation":
+						task.result = {
+							reportUrl: `https://placeholder.example/report_${taskId}.pdf`,
+							pages: Math.floor(Math.random() * 10) + 5
+						};
+						break;
+				}
+			}
+		}
+
+		this.tasks.set(taskId, task);
 	}
 
 }
@@ -787,6 +1125,57 @@ const TEST_PAGE_HTML = `<!DOCTYPE html>
     <div class="result" id="timelineResult" style="display:none"></div>
   </div>
 
+  <div class="card" style="background: linear-gradient(135deg, #667eea22 0%, #764ba222 100%);">
+    <h2 style="margin: 0 0 16px 0; color: #667eea;">⚙️ Worker Orchestration</h2>
+
+    <h3>Create Task</h3>
+    <label>Task Type</label>
+    <select id="taskType">
+      <option value="data_processing">Data Processing</option>
+      <option value="image_generation">Image Generation</option>
+      <option value="report_generation">Report Generation</option>
+      <option value="batch_calculation">Batch Calculation</option>
+    </select>
+    <label>Parameters (JSON)</label>
+    <input type="text" id="taskParams" value='{"records": 500}'>
+    <button id="createTaskBtn" onclick="testCreateTask()" disabled>Create Task</button>
+    <div class="result" id="createTaskResult" style="display:none"></div>
+
+    <h3 style="margin-top: 24px;">Check Task Status</h3>
+    <label>Task ID</label>
+    <input type="text" id="checkTaskId" placeholder="task_xxxxx">
+    <button id="checkTaskBtn" onclick="testCheckTask()" disabled>Check Status</button>
+    <div class="result" id="checkTaskResult" style="display:none"></div>
+
+    <h3 style="margin-top: 24px;">List Tasks</h3>
+    <label>Filter by Status</label>
+    <select id="listTasksStatus">
+      <option value="all">All</option>
+      <option value="pending">Pending</option>
+      <option value="running">Running</option>
+      <option value="completed">Completed</option>
+      <option value="failed">Failed</option>
+    </select>
+    <button id="listTasksBtn" onclick="testListTasks()" disabled>List Tasks</button>
+    <div class="result" id="listTasksResult" style="display:none"></div>
+
+    <h3 style="margin-top: 24px;">Process Batch</h3>
+    <label>Items (comma-separated numbers)</label>
+    <input type="text" id="batchItems" value="5,10,15,20">
+    <label>Operation</label>
+    <select id="batchOperation">
+      <option value="square">Square</option>
+      <option value="cube">Cube</option>
+      <option value="factorial">Factorial</option>
+    </select>
+    <button id="processBatchBtn" onclick="testProcessBatch()" disabled>Process Batch</button>
+    <div class="result" id="processBatchResult" style="display:none"></div>
+
+    <h3 style="margin-top: 24px;">Orchestration Dashboard</h3>
+    <button id="dashboardBtn" onclick="testDashboard()" disabled>Get Dashboard</button>
+    <div class="result" id="dashboardResult" style="display:none"></div>
+  </div>
+
   <div class="card">
     <h3>Connection Log</h3>
     <div id="log"></div>
@@ -820,6 +1209,11 @@ const TEST_PAGE_HTML = `<!DOCTYPE html>
       document.getElementById("codeBtn").disabled = !connected;
       document.getElementById("userBtn").disabled = !connected;
       document.getElementById("timelineBtn").disabled = !connected;
+      document.getElementById("createTaskBtn").disabled = !connected;
+      document.getElementById("checkTaskBtn").disabled = !connected;
+      document.getElementById("listTasksBtn").disabled = !connected;
+      document.getElementById("processBatchBtn").disabled = !connected;
+      document.getElementById("dashboardBtn").disabled = !connected;
     }
 
     // Helper function to render MCP-UI resources
@@ -1165,6 +1559,115 @@ const TEST_PAGE_HTML = `<!DOCTYPE html>
               }
             ]
           }
+        });
+        await renderUIResource(res, result);
+      } catch (e) {
+        result.textContent = "Error: " + e.message;
+        result.className = "result error";
+        result.style.display = "block";
+      }
+    };
+
+    // Worker Orchestration Tests
+    window.testCreateTask = async function() {
+      const taskType = document.getElementById("taskType").value;
+      const taskParams = document.getElementById("taskParams").value;
+      const result = document.getElementById("createTaskResult");
+
+      try {
+        const params = JSON.parse(taskParams);
+        const res = await sendMessage("tools/call", {
+          name: "create_task",
+          arguments: { type: taskType, params: params }
+        });
+        const taskId = res.content[0].text.split(": ")[1];
+        document.getElementById("checkTaskId").value = taskId;
+        result.textContent = res.content[0].text + "\\n\\nTask ID copied to status checker!";
+        result.className = "result";
+        result.style.display = "block";
+      } catch (e) {
+        result.textContent = "Error: " + e.message;
+        result.className = "result error";
+        result.style.display = "block";
+      }
+    };
+
+    window.testCheckTask = async function() {
+      const taskId = document.getElementById("checkTaskId").value;
+      const result = document.getElementById("checkTaskResult");
+
+      if (!taskId) {
+        result.textContent = "Please enter a task ID";
+        result.className = "result error";
+        result.style.display = "block";
+        return;
+      }
+
+      try {
+        const res = await sendMessage("tools/call", {
+          name: "get_task_status",
+          arguments: { taskId: taskId }
+        });
+        result.textContent = res.content[0].text;
+        result.className = "result";
+        result.style.display = "block";
+      } catch (e) {
+        result.textContent = "Error: " + e.message;
+        result.className = "result error";
+        result.style.display = "block";
+      }
+    };
+
+    window.testListTasks = async function() {
+      const status = document.getElementById("listTasksStatus").value;
+      const result = document.getElementById("listTasksResult");
+
+      try {
+        const res = await sendMessage("tools/call", {
+          name: "list_tasks",
+          arguments: { status: status }
+        });
+        result.textContent = res.content[0].text;
+        result.className = "result";
+        result.style.display = "block";
+      } catch (e) {
+        result.textContent = "Error: " + e.message;
+        result.className = "result error";
+        result.style.display = "block";
+      }
+    };
+
+    window.testProcessBatch = async function() {
+      const itemsStr = document.getElementById("batchItems").value;
+      const operation = document.getElementById("batchOperation").value;
+      const result = document.getElementById("processBatchResult");
+
+      try {
+        const items = itemsStr.split(",").map(s => parseFloat(s.trim())).filter(n => !isNaN(n));
+        if (items.length === 0) {
+          throw new Error("Please enter valid numbers");
+        }
+        const res = await sendMessage("tools/call", {
+          name: "process_batch",
+          arguments: { items: items, operation: operation }
+        });
+        result.textContent = res.content[0].text;
+        result.className = "result";
+        result.style.display = "block";
+      } catch (e) {
+        result.textContent = "Error: " + e.message;
+        result.className = "result error";
+        result.style.display = "block";
+      }
+    };
+
+    window.testDashboard = async function() {
+      const result = document.getElementById("dashboardResult");
+
+      try {
+        const res = await sendMessage("tools/call", {
+          name: "get_orchestration_dashboard",
+          arguments: {}
         });
         await renderUIResource(res, result);
       } catch (e) {
