@@ -682,6 +682,46 @@ export class MyMCP extends McpAgent {
 			},
 		);
 
+		// Orchestrate multiple agents with a single prompt
+		this.server.tool(
+			"orchestrate_agents",
+			{
+				prompt: z.string().describe("High-level instruction to send to all agents"),
+				agents: z.array(z.string()).optional().describe("Agent names to orchestrate"),
+				taskType: z.enum(["data_processing", "image_generation", "report_generation", "batch_calculation"]).optional().describe("Task type for all agents"),
+			},
+			async ({ prompt, agents, taskType }) => {
+				const agentList = agents?.length ? agents : ["planner", "analyst", "reviewer"];
+				const type = taskType ?? "data_processing";
+
+				const tasks = agentList.map(agent =>
+					this.moltbot.createTask(type, {
+						agent,
+						prompt,
+					}),
+				);
+
+				const taskSummary = tasks
+					.map(task => `${task.id} - ${type} - ${task.status} (agent: ${task.params.agent ?? "unknown"})`)
+					.join("\n");
+
+				return {
+					content: [
+						{
+							type: "text",
+							text: `Orchestration started for ${agentList.length} agents.\n${taskSummary}`,
+							annotations: { priority: 1.0, audience: ["user"] },
+						},
+						{
+							type: "text",
+							text: `Prompt: ${prompt}`,
+							annotations: { audience: ["assistant"] },
+						},
+					],
+				};
+			},
+		);
+
 		// Get task status
 		this.server.tool(
 			"get_task_status",
