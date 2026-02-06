@@ -1,5 +1,6 @@
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { McpAgent, createMcpHandler } from "agents/mcp";
+import { MoltbotOrchestrator } from "./moltbot";
 import { z } from "zod";
 
 // Helper to create UI resources for MCP-UI
@@ -20,19 +21,7 @@ export class MyMCP extends McpAgent {
 
 	private static uiResources: Map<string, { uri: string; mimeType: string; blob: string }> = new Map();
 
-	// Worker orchestration: Task storage and management
-	private tasks: Map<string, {
-		id: string;
-		type: string;
-		status: "pending" | "running" | "completed" | "failed";
-		progress: number;
-		createdAt: Date;
-		startedAt?: Date;
-		completedAt?: Date;
-		result?: any;
-		error?: string;
-		params: any;
-	}> = new Map();
+	private readonly moltbot = new MoltbotOrchestrator();
 
 	async init() {
 		// Register resources/read endpoint for UI resources
@@ -674,32 +663,18 @@ export class MyMCP extends McpAgent {
 				params: z.record(z.string(), z.any()).describe("Task parameters"),
 			},
 			async ({ type, params }) => {
-				const taskId = `task_${Date.now()}_${Math.random().toString(36).substring(7)}`;
-
-				const task = {
-					id: taskId,
-					type,
-					status: "pending" as const,
-					progress: 0,
-					createdAt: new Date(),
-					params,
-				};
-
-				this.tasks.set(taskId, task);
-
-				// Simulate background processing
-				this.processTaskInBackground(taskId);
+				const task = this.moltbot.createTask(type, params);
 
 				return {
 					content: [
 						{
 							type: "text",
-							text: `Task created: ${taskId}`,
+							text: `Task created: ${task.id}`,
 							annotations: { priority: 1.0, audience: ["user"] },
 						},
 						{
 							type: "text",
-							text: `Task ID: ${taskId}, Type: ${type}, Status: pending`,
+							text: `Task ID: ${task.id}, Type: ${type}, Status: ${task.status}`,
 							annotations: { audience: ["assistant"] },
 						},
 					],
@@ -714,7 +689,7 @@ export class MyMCP extends McpAgent {
 				taskId: z.string().describe("Task ID to check"),
 			},
 			async ({ taskId }) => {
-				const task = this.tasks.get(taskId);
+				const task = this.moltbot.getTask(taskId);
 
 				if (!task) {
 					return {
@@ -758,11 +733,7 @@ ${task.error ? `Error: ${task.error}` : ""}`;
 				status: z.enum(["all", "pending", "running", "completed", "failed"]).optional().describe("Filter by status"),
 			},
 			async ({ status = "all" }) => {
-				let tasks = Array.from(this.tasks.values());
-
-				if (status !== "all") {
-					tasks = tasks.filter(t => t.status === status);
-				}
+				const tasks = this.moltbot.listTasks(status);
 
 				const taskList = tasks.map(t =>
 					`${t.id} - ${t.type} - ${t.status} (${t.progress}%)`
@@ -788,23 +759,8 @@ ${task.error ? `Error: ${task.error}` : ""}`;
 				operation: z.enum(["square", "cube", "factorial"]).describe("Operation to perform"),
 			},
 			async ({ items, operation }) => {
-				const batchId = `batch_${Date.now()}`;
-
-				// Create individual tasks for each item
-				const taskIds = items.map((item, index) => {
-					const taskId = `${batchId}_${index}`;
-					const task = {
-						id: taskId,
-						type: "batch_calculation",
-						status: "pending" as const,
-						progress: 0,
-						createdAt: new Date(),
-						params: { item, operation },
-					};
-					this.tasks.set(taskId, task);
-					this.processTaskInBackground(taskId);
-					return taskId;
-				});
+				const { batchId, tasks } = this.moltbot.createBatch(items, operation);
+				const taskIds = tasks.map(task => task.id);
 
 				return {
 					content: [
@@ -828,16 +784,10 @@ ${task.error ? `Error: ${task.error}` : ""}`;
 			"get_orchestration_dashboard",
 			{},
 			async () => {
-				const allTasks = Array.from(this.tasks.values());
-				const stats = {
-					total: allTasks.length,
-					pending: allTasks.filter(t => t.status === "pending").length,
-					running: allTasks.filter(t => t.status === "running").length,
-					completed: allTasks.filter(t => t.status === "completed").length,
-					failed: allTasks.filter(t => t.status === "failed").length,
-				};
+				const { total, pending, running, completed, failed, recent } = this.moltbot.getStats();
+				const stats = { total, pending, running, completed, failed };
 
-				const recentTasks = allTasks.slice(-5).map(t => ({
+				const recentTasks = recent.slice(0, 5).map(t => ({
 					id: t.id.substring(0, 16),
 					type: t.type,
 					status: t.status,
@@ -925,67 +875,6 @@ ${task.error ? `Error: ${task.error}` : ""}`;
 		);
 	}
 
-	// Background task processor
-	private async processTaskInBackground(taskId: string) {
-		const task = this.tasks.get(taskId);
-		if (!task) return;
-
-		// Update to running
-		task.status = "running";
-		task.startedAt = new Date();
-		task.progress = 10;
-
-		// Simulate processing with progress updates
-		const steps = [25, 50, 75, 90, 100];
-		for (const progress of steps) {
-			await new Promise(resolve => setTimeout(resolve, 500)); // Simulate work
-			task.progress = progress;
-
-			if (progress === 100) {
-				// Complete the task
-				task.status = "completed";
-				task.completedAt = new Date();
-
-				// Generate result based on task type
-				switch (task.type) {
-					case "data_processing":
-						task.result = {
-							processed: task.params.records || 100,
-							duration: Date.now() - task.createdAt.getTime()
-						};
-						break;
-					case "batch_calculation":
-						const { item, operation } = task.params;
-						let result;
-						switch (operation) {
-							case "square": result = item * item; break;
-							case "cube": result = item * item * item; break;
-							case "factorial":
-								result = 1;
-								for (let i = 2; i <= item; i++) result *= i;
-								break;
-						}
-						task.result = { input: item, operation, output: result };
-						break;
-					case "image_generation":
-						task.result = {
-							imageUrl: `https://placeholder.example/image_${taskId}.png`,
-							format: "png",
-							size: "1024x1024"
-						};
-						break;
-					case "report_generation":
-						task.result = {
-							reportUrl: `https://placeholder.example/report_${taskId}.pdf`,
-							pages: Math.floor(Math.random() * 10) + 5
-						};
-						break;
-				}
-			}
-		}
-
-		this.tasks.set(taskId, task);
-	}
 
 }
 

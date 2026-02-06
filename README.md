@@ -13,6 +13,18 @@ Alternatively, you can use the command line below to get the remote MCP Server c
 npm create cloudflare@latest -- my-mcp-server --template=cloudflare/ai/demos/remote-mcp-authless
 ```
 
+
+## Worker orchestration with Moltbot
+
+This server now routes orchestration-style tools (`create_task`, `get_task_status`, `list_tasks`, `process_batch`, `get_orchestration_dashboard`) through a dedicated Moltbot orchestration module at `src/moltbot.ts`.
+
+To verify end-to-end locally from Codex:
+
+```bash
+npm run dev -- --port 8787
+bash test-working.sh
+```
+
 ## Customizing your MCP Server
 
 To add your own [tools](https://developers.cloudflare.com/agents/model-context-protocol/tools/) to the MCP server, define each tool inside the `init()` method of `src/index.ts` using `this.server.tool(...)`. 
