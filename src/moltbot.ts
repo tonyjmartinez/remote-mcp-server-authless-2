@@ -14,8 +14,17 @@ export interface OrchestrationTask {
 	params: Record<string, unknown>;
 }
 
+export interface OrchestrationMessage {
+	timestamp: string;
+	from: string;
+	to: string;
+	role?: string;
+	message: string;
+}
+
 export class MoltbotOrchestrator {
 	private readonly tasks = new Map<string, OrchestrationTask>();
+	private readonly conversations = new Map<string, OrchestrationMessage[]>();
 
 	createTask(type: TaskType, params: Record<string, unknown>, idPrefix = "task"): OrchestrationTask {
 		const taskId = `${idPrefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -49,6 +58,16 @@ export class MoltbotOrchestrator {
 	listTasks(status: "all" | TaskStatus = "all") {
 		const all = Array.from(this.tasks.values());
 		return status === "all" ? all : all.filter(task => task.status === status);
+	}
+
+	addConversationMessage(orchestrationId: string, message: OrchestrationMessage) {
+		const conversation = this.conversations.get(orchestrationId) ?? [];
+		conversation.push(message);
+		this.conversations.set(orchestrationId, conversation);
+	}
+
+	getConversation(orchestrationId: string) {
+		return this.conversations.get(orchestrationId) ?? [];
 	}
 
 	getStats() {

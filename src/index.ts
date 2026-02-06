@@ -691,31 +691,105 @@ export class MyMCP extends McpAgent {
 				taskType: z.enum(["data_processing", "image_generation", "report_generation", "batch_calculation"]).optional().describe("Task type for all agents"),
 			},
 			async ({ prompt, agents, taskType }) => {
-				const agentList = agents?.length ? agents : ["planner", "analyst", "reviewer"];
+				const defaultAgents = [
+					{ name: "staff_software_engineer", role: "Staff Software Engineer" },
+					{ name: "staff_product_manager", role: "Staff Product Manager" },
+					{ name: "staff_project_manager", role: "Staff Project Manager" },
+					{ name: "staff_designer", role: "Staff Designer" },
+				];
+				const roleByAgent = new Map(defaultAgents.map(agent => [agent.name, agent.role]));
+				const agentList = agents?.length ? agents : defaultAgents.map(agent => agent.name);
 				const type = taskType ?? "data_processing";
+				const orchestrationId = `orch_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+
+				const messages = [
+					{
+						from: "staff_product_manager",
+						to: "staff_designer",
+						message: `We need a UX pass for: ${prompt}`,
+					},
+					{
+						from: "staff_designer",
+						to: "staff_software_engineer",
+						message: "I will define the visual treatment and toggle behavior. Please plan the CSS variables.",
+					},
+					{
+						from: "staff_project_manager",
+						to: "staff_product_manager",
+						message: "I'll track scope, timeline, and ensure the change is testable.",
+					},
+					{
+						from: "staff_software_engineer",
+						to: "staff_project_manager",
+						message: "I will implement the toggle and persistence logic with minimal JS.",
+					},
+				];
+
+				const timestamp = new Date().toISOString();
+				messages.forEach(entry => {
+					this.moltbot.addConversationMessage(orchestrationId, {
+						timestamp,
+						from: entry.from,
+						to: entry.to,
+						role: roleByAgent.get(entry.from),
+						message: entry.message,
+					});
+				});
 
 				const tasks = agentList.map(agent =>
 					this.moltbot.createTask(type, {
 						agent,
+						role: roleByAgent.get(agent) ?? agent,
+						orchestrationId,
 						prompt,
 					}),
 				);
 
 				const taskSummary = tasks
-					.map(task => `${task.id} - ${type} - ${task.status} (agent: ${task.params.agent ?? "unknown"})`)
+					.map(task => `${task.id} - ${type} - ${task.status} (agent: ${task.params.agent ?? "unknown"}, role: ${task.params.role ?? "unknown"})`)
+					.join("\n");
+				const conversationLog = this.moltbot
+					.getConversation(orchestrationId)
+					.map(entry => `[${entry.timestamp}] ${entry.from} -> ${entry.to}: ${entry.message}`)
 					.join("\n");
 
 				return {
 					content: [
 						{
 							type: "text",
-							text: `Orchestration started for ${agentList.length} agents.\n${taskSummary}`,
+							text: `Orchestration started for ${agentList.length} agents.\n${taskSummary}\n\nConversation log:\n${conversationLog}`,
 							annotations: { priority: 1.0, audience: ["user"] },
 						},
 						{
 							type: "text",
-							text: `Prompt: ${prompt}`,
+							text: `Prompt: ${prompt}\nOrchestration ID: ${orchestrationId}`,
 							annotations: { audience: ["assistant"] },
+						},
+					],
+				};
+			},
+		);
+
+		this.server.tool(
+			"get_orchestration_conversation",
+			{
+				orchestrationId: z.string().describe("Orchestration ID to retrieve agent conversation"),
+			},
+			async ({ orchestrationId }) => {
+				const conversation = this.moltbot.getConversation(orchestrationId);
+				const conversationLog =
+					conversation.length > 0
+						? conversation
+								.map(entry => `[${entry.timestamp}] ${entry.from} -> ${entry.to}: ${entry.message}`)
+								.join("\n")
+						: "No conversation found.";
+
+				return {
+					content: [
+						{
+							type: "text",
+							text: conversationLog,
+							annotations: { priority: 1.0, audience: ["user"] },
 						},
 					],
 				};
@@ -926,25 +1000,88 @@ const TEST_PAGE_HTML = `<!DOCTYPE html>
   <title>MCP Calculator Test</title>
   <style>
     * { box-sizing: border-box; }
-    body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; max-width: 500px; margin: 40px auto; padding: 20px; background: #f5f5f5; }
-    h1 { color: #333; }
-    .card { background: white; padding: 20px; border-radius: 12px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
-    label { display: block; margin-bottom: 8px; font-weight: 600; }
-    input, select { width: 100%; padding: 12px; margin-bottom: 16px; border: 1px solid #ddd; border-radius: 8px; font-size: 16px; }
-    button { width: 100%; padding: 14px; background: #0070f3; color: white; border: none; border-radius: 8px; font-size: 16px; cursor: pointer; }
-    button:disabled { background: #ccc; }
-    button:hover:not(:disabled) { background: #005bb5; }
-    .result { margin-top: 16px; padding: 16px; background: #e8f5e9; border-radius: 8px; font-size: 18px; text-align: center; }
-    .error { background: #ffebee; color: #c62828; }
-    #log { font-family: monospace; font-size: 12px; background: #1a1a1a; color: #0f0; padding: 12px; border-radius: 8px; max-height: 200px; overflow-y: auto; white-space: pre-wrap; }
+    :root {
+      color-scheme: light;
+      --page-bg: #f5f5f5;
+      --text-color: #1f2933;
+      --card-bg: #ffffff;
+      --card-shadow: 0 2px 8px rgba(0,0,0,0.1);
+      --input-bg: #ffffff;
+      --input-border: #d1d5db;
+      --muted-text: #52606d;
+      --accent: #0070f3;
+      --accent-hover: #005bb5;
+      --result-bg: #e8f5e9;
+      --error-bg: #ffebee;
+      --error-text: #c62828;
+      --status-connected-bg: #e8f5e9;
+      --status-connected-text: #2e7d32;
+      --status-disconnected-bg: #ffebee;
+      --status-disconnected-text: #c62828;
+      --status-connecting-bg: #fff3e0;
+      --status-connecting-text: #ef6c00;
+      --log-bg: #1a1a1a;
+      --log-text: #0f0;
+      --toggle-bg: #d1d5db;
+      --toggle-knob: #ffffff;
+    }
+    body.dark {
+      color-scheme: dark;
+      --page-bg: #0f1115;
+      --text-color: #f5f7fa;
+      --card-bg: #1c1f26;
+      --card-shadow: 0 2px 12px rgba(0,0,0,0.4);
+      --input-bg: #12141a;
+      --input-border: #2f3642;
+      --muted-text: #9aa5b1;
+      --accent: #4da3ff;
+      --accent-hover: #1f7ae0;
+      --result-bg: #163525;
+      --error-bg: #3a171a;
+      --error-text: #ffb3b3;
+      --status-connected-bg: #163525;
+      --status-connected-text: #9fe6b1;
+      --status-disconnected-bg: #3a171a;
+      --status-disconnected-text: #ffb3b3;
+      --status-connecting-bg: #3a2a14;
+      --status-connecting-text: #ffd9a0;
+      --log-bg: #0b0d12;
+      --log-text: #9fffb3;
+      --toggle-bg: #334155;
+      --toggle-knob: #f8fafc;
+    }
+    body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; max-width: 500px; margin: 40px auto; padding: 20px; background: var(--page-bg); color: var(--text-color); transition: background 0.2s ease, color 0.2s ease; }
+    h1 { color: var(--text-color); margin: 0; }
+    .page-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 24px; }
+    .theme-toggle { display: inline-flex; align-items: center; gap: 10px; font-size: 14px; color: var(--muted-text); }
+    .theme-toggle input { display: none; }
+    .toggle-track { width: 44px; height: 24px; background: var(--toggle-bg); border-radius: 999px; position: relative; transition: background 0.2s ease; }
+    .toggle-track::after { content: ""; position: absolute; width: 18px; height: 18px; border-radius: 50%; background: var(--toggle-knob); top: 3px; left: 3px; transition: transform 0.2s ease; }
+    .theme-toggle input:checked + .toggle-track::after { transform: translateX(20px); }
+    .card { background: var(--card-bg); padding: 20px; border-radius: 12px; margin-bottom: 20px; box-shadow: var(--card-shadow); }
+    label { display: block; margin-bottom: 8px; font-weight: 600; color: var(--muted-text); }
+    input, select { width: 100%; padding: 12px; margin-bottom: 16px; border: 1px solid var(--input-border); border-radius: 8px; font-size: 16px; background: var(--input-bg); color: var(--text-color); }
+    button { width: 100%; padding: 14px; background: var(--accent); color: white; border: none; border-radius: 8px; font-size: 16px; cursor: pointer; transition: background 0.2s ease; }
+    button:disabled { background: #9aa5b1; }
+    button:hover:not(:disabled) { background: var(--accent-hover); }
+    .result { margin-top: 16px; padding: 16px; background: var(--result-bg); border-radius: 8px; font-size: 18px; text-align: center; color: var(--text-color); }
+    .error { background: var(--error-bg); color: var(--error-text); }
+    #log { font-family: monospace; font-size: 12px; background: var(--log-bg); color: var(--log-text); padding: 12px; border-radius: 8px; max-height: 200px; overflow-y: auto; white-space: pre-wrap; }
     .status { padding: 8px 12px; border-radius: 6px; margin-bottom: 16px; font-weight: 500; }
-    .status.connected { background: #e8f5e9; color: #2e7d32; }
-    .status.disconnected { background: #ffebee; color: #c62828; }
-    .status.connecting { background: #fff3e0; color: #ef6c00; }
+    .status.connected { background: var(--status-connected-bg); color: var(--status-connected-text); }
+    .status.disconnected { background: var(--status-disconnected-bg); color: var(--status-disconnected-text); }
+    .status.connecting { background: var(--status-connecting-bg); color: var(--status-connecting-text); }
   </style>
 </head>
 <body>
-  <h1>MCP Calculator Test</h1>
+  <div class="page-header">
+    <h1>MCP Calculator Test</h1>
+    <label class="theme-toggle">
+      <span>Dark mode</span>
+      <input type="checkbox" id="darkModeToggle">
+      <span class="toggle-track"></span>
+    </label>
+  </div>
 
   <div class="card">
     <div id="status" class="status connecting">Connecting...</div>
@@ -1054,8 +1191,8 @@ const TEST_PAGE_HTML = `<!DOCTYPE html>
     <div class="result" id="timelineResult" style="display:none"></div>
   </div>
 
-  <div class="card" style="background: linear-gradient(135deg, #667eea22 0%, #764ba222 100%);">
-    <h2 style="margin: 0 0 16px 0; color: #667eea;">⚙️ Worker Orchestration</h2>
+  <div class="card" style="background: linear-gradient(135deg, rgba(102, 126, 234, 0.13) 0%, rgba(118, 75, 162, 0.13) 100%);">
+    <h2 style="margin: 0 0 16px 0; color: var(--accent);">⚙️ Worker Orchestration</h2>
 
     <h3>Create Task</h3>
     <label>Task Type</label>
@@ -1117,6 +1254,18 @@ const TEST_PAGE_HTML = `<!DOCTYPE html>
 
     const log = document.getElementById("log");
     const status = document.getElementById("status");
+    const darkModeToggle = document.getElementById("darkModeToggle");
+
+    function applyTheme(isDark) {
+      document.body.classList.toggle("dark", isDark);
+      darkModeToggle.checked = isDark;
+      localStorage.setItem("theme", isDark ? "dark" : "light");
+    }
+
+    const savedTheme = localStorage.getItem("theme");
+    const prefersDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+    applyTheme(savedTheme ? savedTheme === "dark" : prefersDark);
+    darkModeToggle.addEventListener("change", () => applyTheme(darkModeToggle.checked));
 
     function addLog(msg) {
       const time = new Date().toLocaleTimeString();
